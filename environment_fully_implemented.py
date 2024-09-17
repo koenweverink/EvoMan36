@@ -9,7 +9,7 @@
 import sys
 
 from evoman.environment import Environment
-from demo_controller import player_controller
+from controller1 import player_controller
 
 # imports other libs
 import time
@@ -29,8 +29,6 @@ if not os.path.exists(experiment_name):
     os.makedirs(experiment_name)
 
 n_hidden_neurons = 10
-
-
 
 # initializes simulation in individual evolution mode, for single static enemy.
 env = Environment(experiment_name=experiment_name,
