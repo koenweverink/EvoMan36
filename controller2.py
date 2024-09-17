@@ -80,7 +80,7 @@ class player_controller(Controller):
 		else:
 			release = 0
 
-		return [left, right, jump, shoot, release]
+		return [0, 1, 1, 1, 0]
 
 
 # implements controller structure for enemy

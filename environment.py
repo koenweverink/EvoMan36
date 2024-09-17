@@ -2,8 +2,8 @@
 import sys, os
 
 from evoman.environment import Environment
-from group36.controller1 import player_controller
-# from group36.controller2 import player_controller		# Uncomment this line and comment the line above to test the second controller
+# from group36.controller1 import player_controller
+from controller2 import player_controller		# Uncomment this line and comment the line above to test the second controller
 
 # imports other libs
 import numpy as np
