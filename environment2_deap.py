@@ -1,10 +1,11 @@
 import os
 import numpy as np
+from deap import base, creator, tools
 from evoman.environment import Environment
 from controller2 import player_controller
 
 # Configuration
-experiment_name = 'optimization_test'
+experiment_name = 'deap_three_parent_crossover_experiment'
 os.makedirs(experiment_name, exist_ok=True)
 
 n_hidden_neurons = 10
@@ -25,164 +26,119 @@ env = Environment(
 )
 
 # Genetic Algorithm Parameters
-npopulation = 50       # population size
-gens = 30               # Number of generations
-mutation_rate = 0.2     # Mutation rate
-dom_u, dom_l = 1, -1    # Upper and lower bounds of the weights
+npopulation = 51       # population size, adjusted to be a multiple of three for crossover
+gens = 30              # Number of generations
+mutation_rate = 0.2    # Mutation rate
+dom_u, dom_l = 1, -1   # Upper and lower bounds of the weights
 
 # Number of variables in the controller
 n_vars = (env.get_num_sensors() + 1) * n_hidden_neurons + (n_hidden_neurons + 1) * 5
 
+# Create DEAP framework components
+creator.create("FitnessMax", base.Fitness, weights=(1.0,))
+creator.create("Individual", np.ndarray, fitness=creator.FitnessMax)
+
+# DEAP toolbox
+toolbox = base.Toolbox()
+
+# Attribute generator: random initialization of the population
+toolbox.register("attr_float", np.random.uniform, dom_l, dom_u)
+toolbox.register("individual", tools.initRepeat, creator.Individual, toolbox.attr_float, n=n_vars)
+toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+
 # Run the sim and return the fitness
-def simulate(x):
-    f, _, _, _ = env.play(pcont=x)
-    return f
+def simulate(individual):
+    return env.play(pcont=individual)[0]
 
-# Evaluate the current population
-def evaluate(population):
-    return np.array([simulate(individual) for individual in population])
-
-# Normalize fitness
-def normalize(fitness, global_min, global_max):
-    normalized_fitness = 100 * (fitness - global_min) / (global_max - global_min)
-    return normalized_fitness
-
-# Tournament Selection
-def tournament_selection(population, fitness, k=2):
-    selected = []
-    for _ in range(len(population)):
-        contenders = np.random.choice(len(population), k, replace=False)
-        winner = contenders[np.argmax(fitness[contenders])]
-        selected.append(population[winner])
-    return np.array(selected)
-
-# Shuffle Crossover
-def crossover(parent1, parent2):
-    # Generate a random shuffle order
-    shuffle_indices = np.random.permutation(len(parent1))
-
-    # Shuffle both parents
-    shuffled_parent1 = parent1[shuffle_indices]
-    shuffled_parent2 = parent2[shuffle_indices]
-
-    # Perform single-point crossover on shuffled parents
-    crossover_point = np.random.randint(1, len(parent1))
-    child1 = np.concatenate([shuffled_parent1[:crossover_point], shuffled_parent2[crossover_point:]])
-    child2 = np.concatenate([shuffled_parent2[:crossover_point], shuffled_parent1[crossover_point:]])
+# Custom three-parent crossover
+def three_parent_crossover(parent1, parent2, parent3):
+    n_genes = len(parent1)
+    crossover_points = np.sort(np.random.choice(range(1, n_genes), 2, replace=False))
     
-    # Restore the original order
-    reverse_indices = np.argsort(shuffle_indices)
-    child1 = child1[reverse_indices]
-    child2 = child2[reverse_indices]
+    child1 = np.empty(n_genes, dtype=parent1.dtype)
+    child2 = np.empty(n_genes, dtype=parent1.dtype)
+    child3 = np.empty(n_genes, dtype=parent1.dtype)
+    
+    child1[:crossover_points[0]] = parent1[:crossover_points[0]]
+    child1[crossover_points[0]:crossover_points[1]] = parent2[crossover_points[0]:crossover_points[1]]
+    child1[crossover_points[1]:] = parent3[crossover_points[1]:]
+    
+    child2[:crossover_points[0]] = parent2[:crossover_points[0]]
+    child2[crossover_points[0]:crossover_points[1]] = parent3[crossover_points[0]:crossover_points[1]]
+    child2[crossover_points[1]:] = parent1[crossover_points[1]:]
+    
+    child3[:crossover_points[0]] = parent3[:crossover_points[0]]
+    child3[crossover_points[0]:crossover_points[1]] = parent1[crossover_points[0]:crossover_points[1]]
+    child3[crossover_points[1]:] = parent2[crossover_points[1]:]
+    
+    return child1, child2, child3
 
-    return child1, child2
-
-# Mutation with Swap positions
-def mutate2(child):
-    '''This applies a mutation operator to a list and returns the mutated list.'''
-
-    for i in range(n_vars):
+# Custom mutation
+def mutate(individual):
+    for i in range(len(individual)):
         if np.random.rand() < mutation_rate:
-            child[i] += np.random.normal(0, 0.1)
-            child[i] = np.clip(child[i], dom_l, dom_u)
+            individual[i] += np.random.normal(0, 0.1)
+            individual[i] = np.clip(individual[i], dom_l, dom_u)
+    return individual,
 
-    if np.random.uniform() < mutation_rate:
-        i, j = np.random.choice(range(1, len(child) - 1), size=2, replace=False)
-        child[i], child[j] = child[j], child[i]
-        
-    return child
+# Register DEAP operators
+toolbox.register("evaluate", simulate)
+toolbox.register("mate", three_parent_crossover)
+toolbox.register("mutate", mutate)
+toolbox.register("select", tools.selTournament, tournsize=3)
 
-# Doomsday function as replacement
-def doomsday(pop, fit_pop):
-    worst = int(npopulation / 10)  # a quarter of the population
-    order = np.argsort(fit_pop)
-    orderasc = order[:worst]
-    best_dna = pop[order[-1]]
-
-    for o in orderasc:
-        for j in range(n_vars):
-            if np.random.uniform(0, 1) <= np.random.uniform(0, 1):
-                pop[o][j] = np.random.uniform(dom_l, dom_u)
-            else:
-                pop[o][j] = best_dna[j]
-        fit_pop[o] = simulate(pop[o])
-    return pop, fit_pop
-
-# Initialize population
-population = np.random.uniform(dom_l, dom_u, (npopulation, n_vars))
-fitness = evaluate(population)
-global_min = np.min(fitness)
-global_max = np.max(fitness)
-
-# Genetic Algorithm Loop
-for generation in range(1, gens + 1):
-    selected = tournament_selection(population, fitness)
-    offspring = []
-    for i in range(0, npopulation, 2):
-        parent1, parent2 = selected[i], selected[i+1]
-        child1, child2 = crossover(parent1, parent2)
-        offspring.extend([child1, child2])
-    offspring = np.array(offspring)[:npopulation]
-    offspring = np.array([mutate2(child) for child in offspring])
-    offspring_fitness = evaluate(offspring)
-    
-    # # Replacement using the Doomsday function
-    # population, fitness = doomsday(offspring, offspring_fitness)
-
-    # Replacement: Elitism (keep the best individual) (Could maybe change this)
-    best_idx = np.argmax(fitness)
-    worst_idx = np.argmin(offspring_fitness)
-    if fitness[best_idx] > offspring_fitness[worst_idx]:
+# Replacement with Elitism: Keep the best individual from the current generation
+def elitism(population, fitnesses, offspring, offspring_fitnesses):
+    best_idx = np.argmax(fitnesses)
+    worst_idx = np.argmin(offspring_fitnesses)
+    if fitnesses[best_idx] > offspring_fitnesses[worst_idx]:
         offspring[worst_idx] = population[best_idx]
-        offspring_fitness[worst_idx] = fitness[best_idx]
+        offspring_fitnesses[worst_idx] = fitnesses[best_idx]
+    return offspring, offspring_fitnesses
+
+# Main evolutionary algorithm
+def main():
+    population = toolbox.population(n=npopulation)
     
-    population, fitness = offspring, offspring_fitness
+    # Evaluate the initial population
+    fitnesses = [toolbox.evaluate(individual) for individual in population]
+    for ind, fit in zip(population, fitnesses):
+        ind.fitness.values = (fit,)
 
-    best_fitness = np.max(fitness)
-    mean_fitness = np.mean(fitness)
-    std_fitness = np.std(fitness)
-    print(f'Generation {generation}: Best Fitness = {best_fitness:.4f}, Mean Fitness = {mean_fitness:.4f}, Std Fitness = {std_fitness:.4f}')
+    # Begin the evolution
+    for gen in range(gens):
+        
+        # Select parents using tournament selection
+        offspring = []
+        selected = toolbox.select(population, len(population))
+        for i in range(0, len(selected), 3):
+            parent1, parent2, parent3 = selected[i], selected[i+1], selected[i+2]
+            child1, child2, child3 = toolbox.mate(parent1, parent2, parent3)
+            offspring.extend([creator.Individual(child1), creator.Individual(child2), creator.Individual(child3)])
+        offspring = offspring[:npopulation]
+        
+        # Mutate the offspring
+        offspring = [toolbox.mutate(ind)[0] for ind in offspring]
 
-# Save Best Solution
-best_idx = np.argmax(fitness)
-best_solution = population[best_idx]
-np.savetxt(os.path.join(experiment_name, 'best_solution.txt'), best_solution)
-print(f'Best solution saved with fitness: {fitness[best_idx]:.4f}')
+        # Evaluate the offspring
+        offspring_fitnesses = [toolbox.evaluate(ind) for ind in offspring]
+        for ind, fit in zip(offspring, offspring_fitnesses):
+            ind.fitness.values = (fit,)
 
+        # Apply elitism
+        population, fitnesses = elitism(population, fitnesses, offspring, offspring_fitnesses)
 
+        # Logging
+        best_fitness = np.max(fitnesses)
+        mean_fitness = np.mean(fitnesses)
+        std_fitness = np.std(fitnesses)
+        
+        print(f'Generation {gen + 1}, Best Fitness = {best_fitness:.4f}, Mean Fitness = {mean_fitness:.4f}, Std Fitness = {std_fitness:.4f}')
 
-# Normalize
-# for generation in range(1, gens + 1):
-#     # Normalize fitness values for selection
-#     fitness = normalize(fitness, global_min, global_max)
-    
-#     selected = tournament_selection(population, fitness)
-#     offspring = []
-#     for i in range(0, npopulation, 2):
-#         parent1, parent2 = selected[i], selected[i+1]
-#         child1, child2 = crossover(parent1, parent2)
-#         offspring.extend([child1, child2])
-#     offspring = np.array(offspring)[:npopulation]
-#     offspring = np.array([mutate2(child) for child in offspring])
-#     offspring_fitness = evaluate(offspring)
-    
-#     # Update global min and max based on new fitness values
-#     global_min = min(global_min, np.min(offspring_fitness))
-#     global_max = max(global_max, np.max(offspring_fitness))
+    # Save best solution
+    best_ind = tools.selBest(population, 1)[0]
+    np.savetxt(os.path.join(experiment_name, 'best_solution.txt'), best_ind)
+    print(f'Best solution saved with fitness: {best_ind.fitness.values[0]:.4f}')
 
-#     # Replace with Doomsday function or another appropriate function
-#     population, fitness = doomsday(offspring, offspring_fitness)
-
-#     # Normalize for logging purposes
-#     best_fitness = np.max(fitness)
-#     mean_fitness = np.mean(fitness)
-#     std_fitness = np.std(fitness)
-#     print(f'Generation {generation}: Best Fitness = {best_fitness:.4f}, Mean Fitness = {mean_fitness:.4f}, Std Fitness = {std_fitness:.4f}')
-
-# # Save Best Solution
-# best_idx = np.argmax(fitness)
-# best_solution = population[best_idx]
-# np.savetxt(os.path.join(experiment_name, 'best_solution.txt'), best_solution)
-# print(f'Best solution saved with fitness: {fitness[best_idx]:.4f}')
-
-
+if __name__ == "__main__":
+    main()
