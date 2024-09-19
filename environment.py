@@ -15,7 +15,7 @@ if headless:
 # Initialize Environment
 env = Environment(
     experiment_name=experiment_name,
-    enemies=[2],
+    enemies=[5],
     playermode="ai",
     player_controller=player_controller(n_hidden_neurons),
     enemymode="static",
