@@ -2,12 +2,14 @@ import os
 import numpy as np
 from evoman.environment import Environment
 from controller1 import player_controller
+from evoman.controller import Controller
 
 # Configuration
 experiment_name = 'optimization_test'
 os.makedirs(experiment_name, exist_ok=True)
 
-n_hidden_neurons = 10
+n_hidden_neurons_1 = 10
+n_hidden_neurons_2 = 5  
 headless = True
 if headless:
     os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -17,7 +19,7 @@ env = Environment(
     experiment_name=experiment_name,
     enemies=[5],
     playermode="ai",
-    player_controller=player_controller(n_hidden_neurons),
+    player_controller=player_controller(n_hidden_neurons_1, n_hidden_neurons_2),  # Pass two hidden layers
     enemymode="static",
     level=2,
     speed="fastest",
@@ -25,13 +27,17 @@ env = Environment(
 )
 
 # Genetic Algorithm Parameters
-npopulation = 100       # populationsize
+npopulation = 200       # Population size
 gens = 30               # Number of generations
-mutation_rate = 0.2     # Mutation rate
-dom_u, dom_l = 1, -1    # Upper and lower bounds of the weights
+mutation_rate = 0.1    # Mutation rate
+dom_u, dom_l = 2, -2    # Upper and lower bounds of the weights
 
 # Number of variables in the controller
-n_vars = (env.get_num_sensors() + 1) * n_hidden_neurons + (n_hidden_neurons + 1) * 5
+n_vars = (
+    (env.get_num_sensors() + 1) * n_hidden_neurons_1 +  # Weights and biases from input -> hidden layer 1
+    (n_hidden_neurons_1 + 1) * n_hidden_neurons_2 +  # Weights and biases from hidden layer 1 -> hidden layer 2
+    (n_hidden_neurons_2 + 1) * 5  # Weights and biases from hidden layer 2 -> output layer (5 actions)
+)
 
 # Run the sim and return the fitness
 def simulate(x):
@@ -43,7 +49,7 @@ def evaluate(population):
     return np.array([simulate(individual) for individual in population])
 
 # Tournament Selection
-def tournament_selection(population, fitness, k=2):
+def tournament_selection(population, fitness, k=5):
     selected = []
     for _ in range(len(population)):
         contenders = np.random.choice(len(population), k, replace=False)
@@ -80,6 +86,7 @@ for generation in range(1, gens + 1):
     for i in range(0, npopulation, 2):
         parent1, parent2 = selected[i], selected[i+1]
         child1, child2 = crossover(parent1, parent2)
+        # child1, child2 = two_point_crossover(parent1, parent2)
         offspring.extend([child1, child2])
     offspring = np.array(offspring)[:npopulation]
     
