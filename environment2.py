@@ -42,6 +42,16 @@ def simulate(x):
 def evaluate(population):
     return np.array([simulate(individual) for individual in population])
 
+
+# Normalize fitness
+def normalize(x, fitness_pop):
+    if ( max(fitness_pop) - min(fitness_pop) ) > 0:
+        normalized_fitness = ( x - min(fitness_pop) )/( max(fitness_pop) - min(fitness_pop) )
+    else:
+        normalized_fitness = 0
+
+    return normalized_fitness
+
 # Tournament Selection for three parents
 def tournament_selection(population, fitness, k=3):
     selected = []
@@ -88,6 +98,7 @@ fitness = evaluate(population)
 # Genetic Algorithm Loop
 for generation in range(1, gens + 1):
 
+    fitness_norm =  np.array(list(map(lambda y: normalize(y,fitness), fit_pop)))
     selected = tournament_selection(population, fitness)
 
     offspring = []
