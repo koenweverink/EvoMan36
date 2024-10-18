@@ -10,7 +10,21 @@
             </Attribute>
           </value>
         </entry>
+        <entry key="\Task2\results\results_EA1_EG3.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="\Task2\results\results_EA2_EG1.csv">
+          <value>
+            <Attribute>
+              <option name="separator" value="," />
+            </Attribute>
+          </value>
+        </entry>
+        <entry key="\Task2\results\results_EA2_EG3.csv">
           <value>
             <Attribute>
               <option name="separator" value="," />
